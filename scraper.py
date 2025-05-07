@@ -4,17 +4,23 @@ import json
 import os
 import requests
 from bs4 import BeautifulSoup
+import re
 
-# Constants for the base URL of the Amazon search page, output folder, and file names
+# Constants
 BASE_URL = "https://www.amazon.com/surfboards/s?k=surfboards"
-OUTPUT_FOLDER = "amazon_products"  # Folder where product JSON files will be saved
-SUMMARY_FILE = "products_summary.json"  # File where summary of all products will be saved
-HEADERS = {  # Headers for the HTTP requests to mimic a browser request
+OUTPUT_FOLDER = "amazon_products"
+SUMMARY_FILE = "products_summary.json"
+
+# Custom HTTP headers to mimic a browser request
+HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/114.0.5735.199 Safari/537.36"
     ),
+    "sec-ch-ua": "\"Google Chrome\";v=\"116\", \"Chromium\";v=\"116\", \"Not_A.Brand\";v=\"24\"",
+    "sec-ch-ua-mobile": "?1",
+    "sec-ch-ua-platform": "\"Android\"",
     "Accept": "*/*",
     "Content-Type": "application/json",
     "Referer": "https://www.amazon.com/",
@@ -22,171 +28,172 @@ HEADERS = {  # Headers for the HTTP requests to mimic a browser request
 
 class Scraper:
     """
-    Scraper class handles the web scraping logic for Amazon product data.
-    The scraper extracts information like product name, price, shipping, seller, and brand from the Amazon surfboards search page.
+    Scraper class to fetch product details from Amazon and update progress via a UI callback.
     """
 
     def __init__(self, update_progress_callback):
         """
-        Constructor to initialize the Scraper instance.
-        
-        Parameters:
-        update_progress_callback (function): Callback function to update progress on the UI/console.
+        Initialize the scraper.
 
-        The constructor accepts a callback function which will be called to update progress after scraping each product.
+        Args:
+            update_progress_callback (callable): A function to call with scraping progress updates.
         """
         self.update_progress_callback = update_progress_callback
 
     def fetch_page_soup(self, url):
         """
-        Fetches the HTML content of a page and parses it with BeautifulSoup.
+        Fetch the HTML content of a page and return a BeautifulSoup object.
 
-        Parameters:
-        url (str): The URL of the page to scrape.
+        Args:
+            url (str): URL to fetch.
 
         Returns:
-        BeautifulSoup object: Parsed HTML content of the page if successful, else None.
+            BeautifulSoup | None: Parsed page content or None if request fails.
         """
         try:
-            # Make an HTTP GET request to the provided URL
             response = requests.get(url, headers=HEADERS)
-            
-            # If the request is successful (HTTP status code 200)
             if response.status_code == 200:
                 return BeautifulSoup(response.text, "html.parser")
-            else:
-                # Log a warning if status code is not 200 (OK)
-                print(f"[Warning] Status code: {response.status_code}")
-        except requests.exceptions.RequestException as e:
-            # Handle errors that occur during the HTTP request (e.g., connection errors)
-            print(f"[Error] {e}")
-        
-        # Return None if there was an error or invalid response
+        except requests.exceptions.RequestException:
+            # Silently ignore network errors
+            pass
         return None
 
     def save_product_data(self, product_data, index):
         """
-        Saves the product data to a JSON file.
+        Save product details to a local JSON file.
 
-        Parameters:
-        product_data (dict): The product information as a dictionary.
-        index (int): The index of the product to be used in the filename (e.g., product_1.json).
-        
-        The method will create a directory for saving the JSON files if it does not exist.
-        Each product will be saved in a separate JSON file.
+        Args:
+            product_data (dict): Extracted product information.
+            index (int): Product index used for filename.
         """
         if not os.path.exists(OUTPUT_FOLDER):
-            os.makedirs(OUTPUT_FOLDER)  # Create the output folder if it doesn't exist
-            
-        filename = os.path.join(OUTPUT_FOLDER, f"product_{index}.json")  # Define the filename
-        
+            os.makedirs(OUTPUT_FOLDER)
+        filename = os.path.join(OUTPUT_FOLDER, f"product_{index}.json")
         with open(filename, "w", encoding="utf-8") as f:
-            # Write the product data to the JSON file
             json.dump(product_data, f, ensure_ascii=False, indent=2)
-        
-        print(f"[Info] Saved: {filename}")  # Print a message confirming the save
 
     def extract_product_links(self, soup):
         """
-        Extracts product links from the Amazon search result page.
+        Extract product detail page links from a search result page.
 
-        Parameters:
-        soup (BeautifulSoup): The parsed HTML content of the Amazon search results page.
+        Args:
+            soup (BeautifulSoup): Parsed HTML of the search result page.
 
         Returns:
-        list: A list of product URLs.
+            list[str]: List of full product URLs.
         """
         if soup is None:
             return []
-        
-        # Find all product items on the page and extract their links
+
         return [
             "https://www.amazon.com" + item.find("a", class_="a-link-normal s-no-outline")["href"]
             for item in soup.find_all("div", {"data-component-type": "s-search-result"})
             if item.find("a", class_="a-link-normal s-no-outline")
         ]
+       
+ # Extract the shipping price from a string containing the shipping info.
+    def extract_shipping_price(self, shipping_text):       
+        match = re.search(r'\$[\d,]+\.\d{2}', shipping_text)
+        if match:
+            return match.group(0)
+        return "Shipping info not available"
 
     def extract_product_details(self, soup):
         """
-        Extracts product details such as name, price, shipping, seller, and brand.
+        Extract relevant product details from a product page.
 
-        Parameters:
-        soup (BeautifulSoup): The parsed HTML content of the product page.
+        Args:
+            soup (BeautifulSoup): Parsed HTML of a product detail page.
 
         Returns:
-        dict: A dictionary containing product details.
+            dict: Product information (name, price, shipping, seller, brand).
         """
-        # Extract the relevant details using BeautifulSoup
         title_tag = soup.find(id="productTitle")
         price_tag = soup.select_one("span.a-price span.a-offscreen")
-        shipping_tag = soup.find('b', text='FREE Shipping')
+        shipping_tag = soup.find("span", class_="a-size-base a-color-secondary")
         seller_name = soup.find('a', {'id': 'sellerProfileTriggerId'})
         brand = soup.find(class_="a-size-base po-break-word")
+        
+        shipping_price = (
+            self.extract_shipping_price(shipping_tag.get_text(strip=True)) 
+            if shipping_tag else "Shipping info not available"
+        )
 
         return {
             "product_name": title_tag.get_text(strip=True) if title_tag else None,
             "price": price_tag.get_text(strip=True) if price_tag else "Price shown at checkout.",
-            "shipping_price": shipping_tag.get_text(strip=True) if shipping_tag else "Free Shipping",
+            "shipping_price": shipping_price,
             "seller_name": seller_name.get_text(strip=True) if seller_name else "Amazon.com",
             "brand": brand.get_text(strip=True) if brand else "Amazon",
         }
 
     def begin_scraping_process(self):
         """
-        Starts the scraping process by navigating through Amazon search result pages and scraping product details.
+        Start the scraping process.
 
-        The method will continue scraping until 50 products are collected.
-        After each product is scraped, the data is saved, and a progress update is made.
+        - Iterates through Amazon search result pages.
+        - Extracts product links and details.
+        - Saves data to disk.
+        - Notifies the UI with progress updates.
+        - Stops after 50 products are collected or pages are exhausted.
         """
-        collected_products = 0
-        page_number = 1
-        all_products = []
+        collected_products = 0     # Total products collected
+        page_number = 1            # Start at page 1
+        all_products = []          # Summary data
 
         while collected_products < 50:
-            # Construct the URL for the current page of search results
+            # Construct the URL for the current page
             url = f"{BASE_URL}&page={page_number}"
             soup = self.fetch_page_soup(url)
 
             if not soup:
-                # If there's an error or no soup returned, skip to the next page
                 page_number += 1
                 continue
 
-            # Extract product links from the current search page
+            # Extract links to individual product pages
             product_links = self.extract_product_links(soup)
             if not product_links:
                 page_number += 1
                 continue
 
-            # Iterate over each product link and scrape product details
+            # Loop through each product link and scrape details
             for link in product_links:
                 if collected_products >= 50:
-                    break  # Stop scraping once 50 products are collected
-                
-                product_soup = self.fetch_page_soup(link)  # Get the product page's soup
-                if not product_soup:
-                    continue  # Skip if the product page could not be loaded
+                    break
 
-                product_data = self.extract_product_details(product_soup)  # Extract product data
+                product_soup = self.fetch_page_soup(link)
+                if not product_soup:
+                    continue
+
+                product_data = self.extract_product_details(product_soup)
                 if not product_data.get("product_name"):
-                    continue  # Skip if no product name was found
+                    continue  # Skip incomplete entries
 
                 collected_products += 1
-                self.save_product_data(product_data, collected_products)  # Save product data
+                self.save_product_data(product_data, collected_products)
                 all_products.append(product_data)
 
-                # Save the summary file with all collected product data
+                # Update summary file
                 try:
-                    with open(SUMMARY_FILE, "w") as summary_file:
+                    with open(SUMMARY_FILE, "w", encoding="utf-8") as summary_file:
                         json.dump(all_products, summary_file, indent=4)
-                except Exception as e:
-                    print(f"Error writing summary JSON file: {e}")
+                except Exception:
+                    # If file write fails, silently continue
+                    pass
 
-                # Update progress for the user interface or console
-                short_title = (product_data["product_name"][:50] + "...") if len(product_data["product_name"]) > 50 else product_data["product_name"]
+                # Prepare a short message for the UI
+                short_title = (
+                    product_data["product_name"][:50] + "..."
+                    if len(product_data["product_name"]) > 50
+                    else product_data["product_name"]
+                )
+
+                # Send progress update to UI
                 self.update_progress_callback(collected_products, f"Just scraped: {short_title}")
 
-                # Sleep for a random time between 2 and 6 seconds to avoid overloading Amazon's servers
-                time.sleep(random.uniform(2.0, 6.0))
+                # Wait randomly to mimic human behavior
+                time.sleep(random.uniform(5.0, 12.0))
 
-            page_number += 1  # Move to the next page of search results
+            # Move to the next search results page
+            page_number += 1

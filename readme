@@ -1,129 +1,116 @@
 install:
-git clone teh repsotory
-cd perfct
+cd amazon-scraper-app
+
+For macOS/Linux:
+python3 -m venv myenv
+source myenv/bin/activate
+
+For Windows:
+python -m venv myenv
+myenv\Scripts\activate
+
 pip install -r requirements.txt
- 
- Run the App:
+run:
 python main.py
 
 
-main.py
-This file contains the main Kivy application and manages threading and real-time UI updates during the scraping process.
+Amazon Product Data Collector
+Overview
+This project is a data collection tool that scrapes Amazon product pages to extract information such as product name, price, shipping price, seller name, and brand. The scraper collects 50 unique products from a selected category and saves each one as a JSON file. It also includes a summary JSON file that combines all 50 products.
+The tool has a graphical interface built with Kivy, which shows a rotating loading spinner, progress bar, and live status updates during the scraping process.
+
+Features
+Scrapes 50 Amazon product listings
+Extracts and saves product data in individual JSON files
+Shows real-time progress in a graphical interface
+Includes a combined summary file of all collected products
+Handles pagination and skips broken or blocked pages
+Uses random delays to mimic human behavior and reduce blocking
+
+Technology
+Python 3
+Kivy
+Requests
+BeautifulSoup
+Threading      
+
+
+Program Flow and Function Reference
+The program is divided across two main files: main.py (Kivy GUI) and scraper.py (scraping logic). 
+
+main.py – Graphical User Interface
+The entry point of the application is the ScraperApp class in main.py.
 
 ScraperApp.build()
-Constructs the layout and user interface elements.
+Initializes the Kivy layout. It creates a vertical layout that includes the rotating Spinner, a title label, a status label, and a progress bar. It also creates an instance of the Scraper class and starts the scraping process on a background thread using threading.Thread.
 
-Initializes the Scraper object with a callback (self.update_progress) for real-time UI updates.
+ScraperApp.update_progress(count, message)
+This method is called by the Scraper to send progress updates. It schedules a UI update using Clock.schedule_once() to avoid modifying the UI from the background thread.
 
-Starts the scraper in a background thread to prevent the UI from freezing.
+ScraperApp._update_ui(count, message)
+Updates the progress bar and label with the current product count and scraping status. Stops the spinner once 50 products are scraped.
 
-ScraperApp.update_progress(count, message="Scraping...")
-Updates the progress bar and label based on how many products have been scraped.
+Spinner class
+A custom Image widget that rotates continuously using Kivy graphics instructions (Rotate, PushMatrix, PopMatrix). The rotation is updated on an interval using Clock.schedule_interval. The method stop_rotation() is called to stop spinning once the scrape is complete.
 
-Once scraping reaches 50 products, it calls self.spinner.stop_rotation() to halt the spinner.
+The scraper is designed to fetch and extract product information from Amazon search result pages and corresponding product detail pages. It collects 50 unique product entries, each saved as an individual JSON file, and also generates a summary JSON file containing all the entries.
 
-ui.py
-This file provides the visual layout for the app and defines the animated spinner used during scraping.
+1. Scraper.__init__(self, update_progress_callback)
+This constructor initializes the Scraper object.
+It accepts a callback function (update_progress_callback) which is used to send real-time updates back to the GUI.
+This allows the scraper to communicate its progress (e.g., “Scraped 17 of 50”) while running in a background thread.
 
-Spinner.__init__(self, **kwargs)
-Inherits from Image, initializes with spinner.png.
-
-Sets up a rotation using Kivy’s PushMatrix, PopMatrix, and Rotate.
-
-Binds to widget position/size to ensure rotation origin remains centered.
-
-Uses Clock.schedule_interval() to animate the rotation at 20 FPS.
-
-Spinner.update_origin(self, *args)
-Updates the origin point of rotation to stay centered as the spinner resizes or moves.
-
-Spinner.rotate_spinner(self, dt)
-Rotates the spinner by decreasing the angle by 2 degrees on every clock tick (about every 0.05 seconds).
-
-Spinner.stop_rotation(self)
-Stops the spinner by disabling self.rotate_active.
-
-build_ui()
-Builds the visual interface for the app using BoxLayout, AnchorLayout, Label, and ProgressBar.
-
-Returns a tuple:
-
-layout: the complete layout object,
-
-label: the label showing current progress message,
-
-progress: the progress bar widget,
-
-spinner: the animated spinner image widget.
-
-
-
-
-Class: Scraper
-__init__(self, update_progress_callback)
-Initializes the scraper.
-
-Accepts a function (update_progress_callback) which the scraper will call after each product is scraped, allowing the UI to update in real-time.
-
-get_soup(self, url) -> BeautifulSoup or None
-Sends an HTTP GET request to the provided Amazon URL with appropriate headers.
-
-Returns a BeautifulSoup object for HTML parsing, or None if the request fails.
-
-Handles network errors and logs warnings.
-
-parse_search_page(self, soup: BeautifulSoup) -> list[str]
-Accepts a search results page as a BeautifulSoup object.
-
-Extracts and returns a list of product detail page links (Amazon product URLs).
-
-Filters only valid product containers with the proper class (a-link-normal s-no-outline).
-
-parse_product_page(self, soup: BeautifulSoup) -> dict
-Accepts a product page as a BeautifulSoup object.
-
-Extracts detailed information:
-
-Product Name
-
-Price
-
-Shipping Info
-
-Seller Name
-
-Brand
-
-Falls back to default values when elements are missing.
-
-save_product_to_json(self, product_data: dict, index: int)
-Saves each product’s scraped data to a product_{index}.json file inside the amazon_products/ folder.
-
-Automatically creates the output folder if it doesn’t exist.
-
-start_scraping(self)
-This is the main loop that drives the entire scraping process:
-
-Starts at page 1 of search results and continues until 50 valid products are collected.
-
-For each page:
-
-Parses the page using get_soup().
-
-Extracts product links with parse_search_page().
-
+2. Scraper.begin_scraping_process()
+This is the main method that controls the overall scraping loop.
+It starts from the first page of Amazon search results and continues until 50 products are collected.
+Here’s the internal flow of this function:
+collected_products is initialized to 0 and page_number to 1.
+A while loop runs until collected_products reaches 50.
+The current page URL is built by appending &page={page_number} to the base category URL.
+fetch_page_soup(url) is called to fetch the HTML of the search result page.
+If the page is unavailable (e.g., due to a timeout), the scraper skips to the next page.
+extract_product_links(soup) is used to find links to individual product pages on the current search result page.
 For each product link:
 
-Visits the product page.
+A second HTTP request is made to the product’s detail page via fetch_page_soup.
+The details of the product are extracted using extract_product_details.
+If a valid product_name is found, it's considered a successful scrape.
+The product data is saved via save_product_data.
+The product is added to a summary list and written into products_summary.json.
+A progress message is sent to the UI via update_progress_callback.
+A delay of 5–12 seconds is added between requests to mimic real human browsing.
+When a page’s products are exhausted, the loop moves to the next page.
+Once 50 products are successfully scraped, the loop exits.
 
-Parses product details with parse_product_page().
+3. Scraper.fetch_page_soup(url)
+Handles making the actual HTTP GET request to Amazon using the requests library.
+It includes headers that mimic a real browser to reduce the risk of being blocked.
+If the page loads successfully (status_code == 200), the HTML is parsed with BeautifulSoup and returned.
+If the request fails (due to timeout, connection issues, or a block), it returns None.
+This function is used for both:
+Amazon search result pages (listings)
+Individual product detail pages
 
-Saves product to JSON.
+4. Scraper.extract_product_links(soup)
+Receives a parsed Amazon search results page.
+Looks for <div> elements that contain the attribute data-component-type="s-search-result", which represent each product result.
+Within each such product block, it finds the anchor tag with class a-link-normal s-no-outline, which links to the product detail page.
+The full product URL is constructed by appending the relative href to https://www.amazon.com.
+Returns a list of product URLs for that search result page.
 
-Adds product to a running summary list.
+5. Scraper.extract_product_details(soup)
+Called for each individual product page.
+Attempts to locate and extract:
+Product name: via the element with ID productTitle
+Price: via the span.a-price span.a-offscreen selector
+Shipping info: looks for a <b> tag with the text "FREE Shipping" (or returns a default)
+Seller name: via the anchor tag with ID sellerProfileTriggerId
+Brand: tries to read a text field with class a-size-base po-break-word (if available)
+If any of these elements are missing, a default fallback is used (e.g., “Amazon.com” for seller).
+Returns a dictionary with all the required fields.
 
-Calls the update_progress_callback with product count and title (to update the UI).
-
-Waits a random 10–20 seconds before moving to the next product (to reduce bot detection).
-
-Also writes all product summaries to a master file called products_summary.json.
+6. Scraper.save_product_data(product_data, index)
+Saves the extracted product_data dictionary to a file named product_{index}.json.
+All files are stored inside a folder named amazon_products.
+If the folder doesn’t exist yet, it's created with os.makedirs().
+It also adds the product to a list (all_products), and this list is saved to products_summary.json after each new entry.
