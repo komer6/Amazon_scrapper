@@ -37,7 +37,7 @@ class Scraper:
         """
         self.update_progress_callback = update_progress_callback
 
-    def get_soup(self, url):
+    def fetch_page_soup(self, url):
         """
         Fetches the HTML content of a page and parses it with BeautifulSoup.
 
@@ -64,7 +64,7 @@ class Scraper:
         # Return None if there was an error or invalid response
         return None
 
-    def save_product_to_json(self, product_data, index):
+    def save_product_data(self, product_data, index):
         """
         Saves the product data to a JSON file.
 
@@ -86,9 +86,9 @@ class Scraper:
         
         print(f"[Info] Saved: {filename}")  # Print a message confirming the save
 
-    def parse_search_page(self, soup):
+    def extract_product_links(self, soup):
         """
-        Parses the search result page and extracts product links.
+        Extracts product links from the Amazon search result page.
 
         Parameters:
         soup (BeautifulSoup): The parsed HTML content of the Amazon search results page.
@@ -106,9 +106,9 @@ class Scraper:
             if item.find("a", class_="a-link-normal s-no-outline")
         ]
 
-    def parse_product_page(self, soup):
+    def extract_product_details(self, soup):
         """
-        Parses a product page and extracts product details such as name, price, shipping, seller, and brand.
+        Extracts product details such as name, price, shipping, seller, and brand.
 
         Parameters:
         soup (BeautifulSoup): The parsed HTML content of the product page.
@@ -131,7 +131,7 @@ class Scraper:
             "brand": brand.get_text(strip=True) if brand else "Amazon",
         }
 
-    def start_scraping(self):
+    def begin_scraping_process(self):
         """
         Starts the scraping process by navigating through Amazon search result pages and scraping product details.
 
@@ -145,7 +145,7 @@ class Scraper:
         while collected_products < 50:
             # Construct the URL for the current page of search results
             url = f"{BASE_URL}&page={page_number}"
-            soup = self.get_soup(url)
+            soup = self.fetch_page_soup(url)
 
             if not soup:
                 # If there's an error or no soup returned, skip to the next page
@@ -153,7 +153,7 @@ class Scraper:
                 continue
 
             # Extract product links from the current search page
-            product_links = self.parse_search_page(soup)
+            product_links = self.extract_product_links(soup)
             if not product_links:
                 page_number += 1
                 continue
@@ -163,16 +163,16 @@ class Scraper:
                 if collected_products >= 50:
                     break  # Stop scraping once 50 products are collected
                 
-                product_soup = self.get_soup(link)  # Get the product page's soup
+                product_soup = self.fetch_page_soup(link)  # Get the product page's soup
                 if not product_soup:
                     continue  # Skip if the product page could not be loaded
 
-                product_data = self.parse_product_page(product_soup)  # Extract product data
+                product_data = self.extract_product_details(product_soup)  # Extract product data
                 if not product_data.get("product_name"):
                     continue  # Skip if no product name was found
 
                 collected_products += 1
-                self.save_product_to_json(product_data, collected_products)  # Save product data
+                self.save_product_data(product_data, collected_products)  # Save product data
                 all_products.append(product_data)
 
                 # Save the summary file with all collected product data
@@ -186,7 +186,7 @@ class Scraper:
                 short_title = (product_data["product_name"][:50] + "...") if len(product_data["product_name"]) > 50 else product_data["product_name"]
                 self.update_progress_callback(collected_products, f"Just scraped: {short_title}")
 
-                # Sleep for a random time between 10 and 20 seconds to avoid overloading Amazon's servers
-                time.sleep(random.uniform(10.0, 20.0))
+                # Sleep for a random time between 2 and 6 seconds to avoid overloading Amazon's servers
+                time.sleep(random.uniform(2.0, 6.0))
 
             page_number += 1  # Move to the next page of search results

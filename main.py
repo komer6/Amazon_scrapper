@@ -80,7 +80,7 @@ class ScraperApp(App):
 
         # Initialize and start the scraper in a separate thread to prevent UI blocking
         self.scraper = Scraper(self.update_progress)
-        threading.Thread(target=self.scraper.start_scraping, daemon=True).start()
+        threading.Thread(target=self.scraper.begin_scraping_process, daemon=True).start()
 
         return self.layout
 
