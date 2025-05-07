@@ -1,0 +1,129 @@
+install:
+git clone teh repsotory
+cd perfct
+pip install -r requirements.txt
+ 
+ Run the App:
+python main.py
+
+
+main.py
+This file contains the main Kivy application and manages threading and real-time UI updates during the scraping process.
+
+ScraperApp.build()
+Constructs the layout and user interface elements.
+
+Initializes the Scraper object with a callback (self.update_progress) for real-time UI updates.
+
+Starts the scraper in a background thread to prevent the UI from freezing.
+
+ScraperApp.update_progress(count, message="Scraping...")
+Updates the progress bar and label based on how many products have been scraped.
+
+Once scraping reaches 50 products, it calls self.spinner.stop_rotation() to halt the spinner.
+
+ui.py
+This file provides the visual layout for the app and defines the animated spinner used during scraping.
+
+Spinner.__init__(self, **kwargs)
+Inherits from Image, initializes with spinner.png.
+
+Sets up a rotation using Kivy’s PushMatrix, PopMatrix, and Rotate.
+
+Binds to widget position/size to ensure rotation origin remains centered.
+
+Uses Clock.schedule_interval() to animate the rotation at 20 FPS.
+
+Spinner.update_origin(self, *args)
+Updates the origin point of rotation to stay centered as the spinner resizes or moves.
+
+Spinner.rotate_spinner(self, dt)
+Rotates the spinner by decreasing the angle by 2 degrees on every clock tick (about every 0.05 seconds).
+
+Spinner.stop_rotation(self)
+Stops the spinner by disabling self.rotate_active.
+
+build_ui()
+Builds the visual interface for the app using BoxLayout, AnchorLayout, Label, and ProgressBar.
+
+Returns a tuple:
+
+layout: the complete layout object,
+
+label: the label showing current progress message,
+
+progress: the progress bar widget,
+
+spinner: the animated spinner image widget.
+
+
+
+
+Class: Scraper
+__init__(self, update_progress_callback)
+Initializes the scraper.
+
+Accepts a function (update_progress_callback) which the scraper will call after each product is scraped, allowing the UI to update in real-time.
+
+get_soup(self, url) -> BeautifulSoup or None
+Sends an HTTP GET request to the provided Amazon URL with appropriate headers.
+
+Returns a BeautifulSoup object for HTML parsing, or None if the request fails.
+
+Handles network errors and logs warnings.
+
+parse_search_page(self, soup: BeautifulSoup) -> list[str]
+Accepts a search results page as a BeautifulSoup object.
+
+Extracts and returns a list of product detail page links (Amazon product URLs).
+
+Filters only valid product containers with the proper class (a-link-normal s-no-outline).
+
+parse_product_page(self, soup: BeautifulSoup) -> dict
+Accepts a product page as a BeautifulSoup object.
+
+Extracts detailed information:
+
+Product Name
+
+Price
+
+Shipping Info
+
+Seller Name
+
+Brand
+
+Falls back to default values when elements are missing.
+
+save_product_to_json(self, product_data: dict, index: int)
+Saves each product’s scraped data to a product_{index}.json file inside the amazon_products/ folder.
+
+Automatically creates the output folder if it doesn’t exist.
+
+start_scraping(self)
+This is the main loop that drives the entire scraping process:
+
+Starts at page 1 of search results and continues until 50 valid products are collected.
+
+For each page:
+
+Parses the page using get_soup().
+
+Extracts product links with parse_search_page().
+
+For each product link:
+
+Visits the product page.
+
+Parses product details with parse_product_page().
+
+Saves product to JSON.
+
+Adds product to a running summary list.
+
+Calls the update_progress_callback with product count and title (to update the UI).
+
+Waits a random 10–20 seconds before moving to the next product (to reduce bot detection).
+
+Also writes all product summaries to a master file called products_summary.json.
